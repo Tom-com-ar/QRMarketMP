@@ -6,6 +6,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getOrder, saveOrder, updateOrder } from './orderStore.js';
+import { getShippingQuote } from '../src/shipping.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -21,6 +22,10 @@ const products = {
   'samba-og': { title: 'adidas Samba OG', unit_price: 159999, stock: 6 },
   'air-max-90': { title: 'Nike Air Max 90', unit_price: 199999, stock: 9 },
   'chuck-taylor-all-star-hi': { title: 'Converse Chuck Taylor All Star Hi', unit_price: 119999, stock: 14 },
+};
+
+const coupons = {
+  CUPON: { percentage: 50 },
 };
 
 app.use(express.json({ limit: '20kb' }));
@@ -41,8 +46,19 @@ app.post('/api/checkout/preference', async (req, res) => {
   }
 
   const requestedItems = req.body?.items;
+  const postalCode = typeof req.body?.postalCode === 'string' ? req.body.postalCode.trim() : '';
+  const couponCode = typeof req.body?.couponCode === 'string'
+    ? req.body.couponCode.trim().toUpperCase()
+    : '';
+  const coupon = couponCode ? coupons[couponCode] : null;
+  if (couponCode && !coupon) {
+    return res.status(400).json({ error: 'El cupón ingresado no es válido.' });
+  }
   if (!Array.isArray(requestedItems) || requestedItems.length === 0) {
     return res.status(400).json({ error: 'El carrito está vacío.' });
+  }
+  if (!/^\d{4}$/.test(postalCode) || Number(postalCode) < 1000 || Number(postalCode) > 9999) {
+    return res.status(400).json({ error: 'Ingresá un código postal argentino de 4 dígitos para calcular el envío.' });
   }
 
   const seenIds = new Set();
@@ -76,9 +92,50 @@ app.post('/api/checkout/preference', async (req, res) => {
       quantity: item.quantity,
       unitPrice: item.unit_price,
     }));
-    const total = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+    const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+    const discount = coupon ? Math.round(subtotal * coupon.percentage / 100) : 0;
+    const merchandiseTotal = subtotal - discount;
+    const shipping = getShippingQuote(postalCode, merchandiseTotal);
+    if (!shipping) return res.status(400).json({ error: 'El código postal no es válido.' });
+    const total = merchandiseTotal + shipping.cost;
+    let checkoutItems = items;
+
+    if (coupon) {
+      // Distribute the rounded discount over individual pairs so Mercado Pago
+      // receives only positive integer prices and its total matches the order.
+      const units = items.flatMap((item) => Array.from({ length: item.quantity }, () => ({
+        id: item.id,
+        title: item.title,
+        basePrice: item.unit_price,
+        discount: Math.floor(item.unit_price * coupon.percentage / 100),
+        remainder: (item.unit_price * coupon.percentage) % 100,
+      })));
+      let remainingDiscount = discount - units.reduce((sum, unit) => sum + unit.discount, 0);
+      const discountOrder = [...units].sort((a, b) => b.remainder - a.remainder);
+      for (const unit of discountOrder) {
+        if (remainingDiscount <= 0) break;
+        unit.discount += 1;
+        remainingDiscount -= 1;
+      }
+      checkoutItems = units.map((unit) => ({
+        id: unit.id,
+        title: unit.title,
+        quantity: 1,
+        unit_price: unit.basePrice - unit.discount,
+        currency_id: 'ARS',
+      }));
+    }
+    if (shipping.cost > 0) {
+      checkoutItems.push({
+        id: 'shipping',
+        title: `Envío a ${shipping.zone} (CP ${shipping.postalCode})`,
+        quantity: 1,
+        unit_price: shipping.cost,
+        currency_id: 'ARS',
+      });
+    }
     const body = {
-      items,
+      items: checkoutItems,
       external_reference: orderId,
     };
 
@@ -105,6 +162,10 @@ app.post('/api/checkout/preference', async (req, res) => {
     saveOrder({
       id: orderId,
       items: orderItems,
+      subtotal,
+      discount,
+      couponCode: coupon ? couponCode : null,
+      shipping,
       total,
       currency: 'ARS',
       status: 'pending',

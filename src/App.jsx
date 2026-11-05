@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { getShippingQuote } from './shipping.js';
 
 const products = [
   {
@@ -77,6 +78,12 @@ function App() {
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState('');
   const [activeFilter, setActiveFilter] = useState('Todos');
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponMessage, setCouponMessage] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+  const [shippingPostalCode, setShippingPostalCode] = useState('');
+  const [shippingMessage, setShippingMessage] = useState('');
   const [copied, setCopied] = useState(false);
   const [payment, setPayment] = useState(null);
   const [creatingPayment, setCreatingPayment] = useState(false);
@@ -91,6 +98,12 @@ function App() {
     const product = products.find((entry) => entry.id === item.id);
     return sum + (product ? product.price * item.quantity : 0);
   }, 0);
+  const cartDiscount = appliedCoupon ? Math.round(cartTotal * appliedCoupon.percentage / 100) : 0;
+  const checkoutTotal = cartTotal - cartDiscount;
+  const shippingQuote = shippingPostalCode
+    ? getShippingQuote(shippingPostalCode, checkoutTotal)
+    : null;
+  const finalTotal = checkoutTotal + (shippingQuote?.cost || 0);
   const visibleProducts = activeFilter === 'Todos'
     ? products
     : products.filter((product) => product.category.toLowerCase().includes(activeFilter.toLowerCase()));
@@ -175,6 +188,37 @@ function App() {
     window.history.pushState({}, '', `${window.location.pathname}?vista=carrito`);
   }
 
+  function applyCoupon(event) {
+    event.preventDefault();
+    const code = couponInput.trim().toUpperCase();
+    if (code === 'CUPON') {
+      setAppliedCoupon({ code, percentage: 50 });
+      setCouponInput(code);
+      setCouponMessage('Cupón aplicado: 50% de descuento.');
+      return;
+    }
+    setAppliedCoupon(null);
+    setCouponMessage('Ese código no es válido. Revisá e intentá otra vez.');
+  }
+
+  function removeCoupon() {
+    setAppliedCoupon(null);
+    setCouponInput('');
+    setCouponMessage('Se quitó el cupón.');
+  }
+
+  function calculateShipping(event) {
+    event.preventDefault();
+    const quote = getShippingQuote(postalCode, checkoutTotal);
+    if (!quote) {
+      setShippingPostalCode('');
+      setShippingMessage('Ingresá un código postal válido de 4 dígitos (del 1000 al 9999).');
+      return;
+    }
+    setShippingPostalCode(quote.postalCode);
+    setShippingMessage('');
+  }
+
   async function createCheckout() {
     setCreatingPayment(true);
     setNotice('');
@@ -182,7 +226,11 @@ function App() {
       const response = await fetch('/api/checkout/preference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })) }),
+        body: JSON.stringify({
+          items: cart.map(({ id, quantity }) => ({ id, quantity })),
+          couponCode: appliedCoupon?.code || null,
+          postalCode: shippingPostalCode,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'No se pudo iniciar el pago.');
@@ -238,7 +286,21 @@ function App() {
                   </article>;
                 })}
               </div>
-              <aside className="cart-summary"><p className="eyebrow">RESUMEN</p><div><span>Subtotal</span><strong>{money(cartTotal)}</strong></div><div className="cart-total"><span>Total</span><strong>{money(cartTotal)}</strong></div><p className="cart-summary-note">Pago seguro con Mercado Pago. El envío se agrega en el siguiente módulo.</p>{notice && <p className="notice" role="alert">{notice}</p>}<button className="primary-button" onClick={createCheckout} disabled={creatingPayment}>{creatingPayment ? 'Conectando…' : 'Continuar al pago'} <span>↗</span></button></aside>
+              <aside className="cart-summary"><p className="eyebrow">RESUMEN</p><div><span>Subtotal</span><strong>{money(cartTotal)}</strong></div>
+                <form className="coupon-form" onSubmit={applyCoupon}>
+                  <label htmlFor="coupon-code">Cupón de descuento</label>
+                  <div className="coupon-controls"><input id="coupon-code" value={couponInput} onChange={(event) => setCouponInput(event.target.value)} placeholder="Ingresá tu código" aria-describedby="coupon-help" readOnly={Boolean(appliedCoupon)} /><button type="submit" disabled={!couponInput.trim() || Boolean(appliedCoupon)}>Aplicar</button></div>
+                </form>
+                {couponMessage && <p className={`coupon-message ${appliedCoupon ? 'coupon-success' : ''}`} role="status">{couponMessage}{appliedCoupon && <button type="button" onClick={removeCoupon}>Quitar</button>}</p>}
+                {appliedCoupon && <div className="coupon-discount"><span>Descuento ({appliedCoupon.code})</span><strong>− {money(cartDiscount)}</strong></div>}
+                <form className="shipping-form" onSubmit={calculateShipping}>
+                  <label htmlFor="postal-code">Calculá el envío por código postal</label>
+                  <div className="shipping-controls"><input id="postal-code" inputMode="numeric" maxLength={4} value={postalCode} onChange={(event) => { setPostalCode(event.target.value.replace(/\D/g, '').slice(0, 4)); setShippingPostalCode(''); setShippingMessage(''); }} placeholder="Ej.: 1000" /><button type="submit" disabled={postalCode.length !== 4}>Calcular</button></div>
+                  {shippingMessage && <small className="shipping-error" role="alert">{shippingMessage}</small>}
+                  {shippingQuote && <small className="shipping-result" role="status">{shippingQuote.zone} · {shippingQuote.freeShipping ? 'Envío gratis por superar $250.000' : money(shippingQuote.cost)}</small>}
+                </form>
+                <div className="shipping-total-row"><span>Envío</span><strong>{shippingQuote ? (shippingQuote.cost ? money(shippingQuote.cost) : 'Gratis') : 'A calcular'}</strong></div>
+                <div className="cart-total"><span>Total</span><strong>{money(finalTotal)}</strong></div><p className="cart-summary-note">El envío es gratis en compras desde $250.000. Pago seguro con Mercado Pago.</p>{notice && <p className="notice" role="alert">{notice}</p>}<button className="primary-button" onClick={createCheckout} disabled={creatingPayment || !shippingQuote}>{creatingPayment ? 'Conectando…' : 'Continuar al pago'} <span>↗</span></button></aside>
             </div>
           )}
         </section>
