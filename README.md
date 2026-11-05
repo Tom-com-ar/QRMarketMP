@@ -1,25 +1,26 @@
-# QRMarket MP — avance QM1, QM2 y QM3
+# QRMarket MP — avance QM1 a QM6
 
-Primera versión de la tienda de ejemplo para la actividad. Está hecha con React y Vite. Los productos de muestra viven en `src/App.jsx`.
+Tienda de zapatillas de muestra, construida con React, Vite y Express.
 
-## Requisitos incluidos
+## Funcionalidades
 
-- **QM1 — Catálogo:** grilla de productos con imagen, nombre, precio y stock.
-- **QM2 — Página del producto:** detalle, descripción, selector de cantidad y botón con confirmación visual de “Agregar al carrito”. El carrito completo corresponde a QM4 y queda fuera de este avance.
-- **QM3 — QR por producto:** cada detalle genera un QR distinto que apunta a la dirección de esa página, por ejemplo `?producto=mate-ceramica`.
+- **QM1:** catálogo de zapatillas con fotos, precios y stock.
+- **QM2:** ficha de producto con selector de cantidad.
+- **QM3:** QR único que abre la ficha de cada producto.
+- **QM4:** carrito con cantidades, eliminación, subtotal y persistencia en `localStorage`.
+- **QM5:** el backend valida el carrito y crea una preferencia de Checkout Pro; el botón abre el enlace de pago de Mercado Pago.
+- **QM6:** se puede mostrar un QR que codifica el mismo enlace Checkout Pro para abrirlo desde otro teléfono.
 
-## Ejecutar en la computadora
+## Preparar credenciales de prueba
 
-1. Instalar Node.js y npm.
-2. Desde esta carpeta ejecutar `npm install`.
-3. Ejecutar `npm run dev` y abrir la dirección local que muestra la terminal.
+1. Copiar `.env.example` como `.env` en la raíz del proyecto.
+2. En el panel de desarrolladores de Mercado Pago, crear una aplicación y copiar su **Access Token de prueba**.
+3. Pegar ese token en `MP_ACCESS_TOKEN` dentro de `.env`. No compartir ni subir ese archivo.
 
-Para que un teléfono pueda abrir el QR, la tienda necesita estar publicada en una dirección accesible por Internet. Mientras se ejecuta localmente, el QR apunta a la dirección local.
+## Ejecutar
 
-## Para explicar en clase
+1. Ejecutar `npm install`.
+2. Ejecutar `npm run dev`.
+3. Abrir la dirección local que muestra Vite, normalmente `http://localhost:5173`.
 
-- `products` es el catálogo de datos: cada objeto guarda identificador, nombre, categoría, precio, stock, descripción e imagen.
-- La pantalla inicial recorre `products` y dibuja una tarjeta por producto.
-- Al elegir una tarjeta, la aplicación guarda su `id` en la URL. Con ese identificador busca los datos y muestra el detalle.
-- `QRCodeSVG` convierte esa URL en una imagen QR. Como la URL incluye el identificador, cada producto tiene su propio código.
-- `quantity` controla el selector de unidades. El botón muestra una confirmación; todavía no guarda productos en un carrito porque eso es QM4.
+El comando de desarrollo levanta el servidor Express en el puerto 3001 y Vite en el 5173; Vite reenvía `/api` al backend.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
 const products = [
@@ -6,7 +6,7 @@ const products = [
     id: 'air-force-1-07',
     name: 'Air Force 1 ’07',
     category: 'Nike · Clásicos',
-    price: 189999,
+    price: 10000,
     stock: 8,
     image: 'https://static.nike.com/a/images/t_web_pdp_535_v2/f_auto%2Cu_9ddf04c7-2a9a-4d76-add1-d15af8f0263d%2Cc_scale%2Cfl_relative%2Cw_1.0%2Ch_1.0%2Cfl_layer_apply/b7d9211c-26e7-431a-ac24-b0540fb3c00f/AIR%2BFORCE%2B1%2B%2707.png',
     description: 'Un ícono que no necesita presentación: cuero suave, amortiguación Air y una silueta que combina con todo.',
@@ -70,11 +70,26 @@ const money = (amount) => new Intl.NumberFormat('es-AR', {
 
 function App() {
   const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get('producto'));
+  const [view, setView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('vista') || (params.has('producto') ? 'product' : 'catalog');
+  });
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState('');
   const [activeFilter, setActiveFilter] = useState('Todos');
   const [copied, setCopied] = useState(false);
+  const [payment, setPayment] = useState(null);
+  const [creatingPayment, setCreatingPayment] = useState(false);
+  const [cart, setCart] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('qrmarket-cart') || '[]'); }
+    catch { return []; }
+  });
   const selectedProduct = products.find((product) => product.id === selectedId);
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const cartTotal = cart.reduce((sum, item) => {
+    const product = products.find((entry) => entry.id === item.id);
+    return sum + (product ? product.price * item.quantity : 0);
+  }, 0);
   const visibleProducts = activeFilter === 'Todos'
     ? products
     : products.filter((product) => product.category.toLowerCase().includes(activeFilter.toLowerCase()));
@@ -87,8 +102,13 @@ function App() {
     return url.toString();
   }, [selectedProduct]);
 
+  useEffect(() => {
+    localStorage.setItem('qrmarket-cart', JSON.stringify(cart));
+  }, [cart]);
+
   function openProduct(product) {
     setSelectedId(product.id);
+    setView('product');
     setQuantity(1);
     setNotice('');
     const url = new URL(window.location.href);
@@ -98,12 +118,63 @@ function App() {
 
   function goToCatalog() {
     setSelectedId(null);
+    setView('catalog');
     setNotice('');
     window.history.pushState({}, '', window.location.pathname);
   }
 
   function addToCart() {
-    setNotice(`${quantity} ${quantity === 1 ? 'unidad agregada' : 'unidades agregadas'} al carrito.`);
+    const inCart = cart.find((item) => item.id === selectedProduct.id)?.quantity || 0;
+    const added = Math.min(quantity, selectedProduct.stock - inCart);
+    if (added <= 0) {
+      setNotice('Ya alcanzaste el stock disponible de este modelo.');
+      return;
+    }
+    setCart((items) => {
+      const existing = items.find((item) => item.id === selectedProduct.id);
+      return existing
+        ? items.map((item) => item.id === selectedProduct.id ? { ...item, quantity: Math.min(selectedProduct.stock, item.quantity + added) } : item)
+        : [...items, { id: selectedProduct.id, quantity: added }];
+    });
+    setNotice(`${added} ${added === 1 ? 'par agregado' : 'pares agregados'} al carrito.`);
+  }
+
+  function openCart() {
+    setSelectedId(null);
+    setView('cart');
+    setNotice('');
+    window.history.pushState({}, '', `${window.location.pathname}?vista=carrito`);
+  }
+
+  async function createCheckout() {
+    setCreatingPayment(true);
+    setNotice('');
+    try {
+      const response = await fetch('/api/checkout/preference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudo iniciar el pago.');
+      setPayment(data);
+      setView('payment');
+      window.history.pushState({}, '', `${window.location.pathname}?vista=pago`);
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setCreatingPayment(false);
+    }
+  }
+
+  function changeCartQuantity(product, amount) {
+    setCart((items) => items.map((item) => item.id === product.id
+      ? { ...item, quantity: Math.max(0, Math.min(product.stock, item.quantity + amount)) }
+      : item).filter((item) => item.quantity > 0));
+  }
+
+  function removeFromCart(productId) {
+    setCart((items) => items.filter((item) => item.id !== productId));
   }
 
   async function copyProductLink() {
@@ -112,7 +183,60 @@ function App() {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
-  if (selectedProduct) {
+  if (view === 'cart') {
+    return (
+      <main className="page-shell">
+        <header className="topbar">
+          <button className="brand" onClick={goToCatalog}><span className="brand-mark">q</span><span>qrmarket<span className="brand-dot">.</span></span></button>
+          <span className="top-note">TU SELECCIÓN</span>
+          <button className="text-button" onClick={goToCatalog}>← Seguir mirando</button>
+        </header>
+        <section className="cart-page">
+          <p className="eyebrow">QRMARKET · TU PEDIDO</p>
+          <div className="cart-title-row"><h1>Tu carrito<span>.</span></h1><span className="product-count">{cartCount} {cartCount === 1 ? 'par' : 'pares'}</span></div>
+          {cart.length === 0 ? (
+            <div className="empty-cart"><span className="empty-cart-mark">＋</span><h2>Está un poco vacío por acá.</h2><p>Explorá la colección y sumá tu próximo par.</p><button className="primary-button empty-cart-button" onClick={goToCatalog}>Ver zapatillas <span>↗</span></button></div>
+          ) : (
+            <div className="cart-layout">
+              <div className="cart-items">
+                {cart.map((item) => {
+                  const product = products.find((entry) => entry.id === item.id);
+                  if (!product) return null;
+                  return <article className="cart-item" key={item.id}>
+                    <button className="cart-item-image" onClick={() => openProduct(product)} aria-label={`Ver ${product.name}`}><img src={product.image} alt={product.name} /></button>
+                    <div className="cart-item-info"><p className="eyebrow">{product.category}</p><button className="cart-item-name" onClick={() => openProduct(product)}>{product.name}</button><span className="cart-item-stock">{product.stock} disponibles</span><button className="remove-item" onClick={() => removeFromCart(product.id)}>Quitar</button></div>
+                    <div className="cart-item-end"><strong>{money(product.price * item.quantity)}</strong><div className="quantity-control cart-quantity"><button onClick={() => changeCartQuantity(product, -1)} aria-label={`Restar ${product.name}`}>−</button><span>{item.quantity}</span><button onClick={() => changeCartQuantity(product, 1)} aria-label={`Sumar ${product.name}`} disabled={item.quantity >= product.stock}>+</button></div></div>
+                  </article>;
+                })}
+              </div>
+              <aside className="cart-summary"><p className="eyebrow">RESUMEN</p><div><span>Subtotal</span><strong>{money(cartTotal)}</strong></div><div className="cart-total"><span>Total</span><strong>{money(cartTotal)}</strong></div><p className="cart-summary-note">Pago seguro con Mercado Pago. El envío se agrega en el siguiente módulo.</p>{notice && <p className="notice" role="alert">{notice}</p>}<button className="primary-button" onClick={createCheckout} disabled={creatingPayment}>{creatingPayment ? 'Conectando…' : 'Continuar al pago'} <span>↗</span></button></aside>
+            </div>
+          )}
+        </section>
+        <footer className="footer"><span>QRMarket · Selección sneaker</span><span>Modelos icónicos, todos los días.</span></footer>
+      </main>
+    );
+  }
+
+  if (view === 'payment' && payment) {
+    return (
+      <main className="page-shell">
+        <header className="topbar"><button className="brand" onClick={openCart}><span className="brand-mark">q</span><span>qrmarket<span className="brand-dot">.</span></span></button><span className="top-note">PAGO SEGURO · MERCADO PAGO</span><button className="text-button" onClick={openCart}>← Volver al carrito</button></header>
+        <section className="payment-page">
+          <p className="eyebrow">QRMARKET · CHECKOUT</p>
+          <h1>¿Cómo querés<br /><em>pagar?</em></h1>
+          <div className="payment-options">
+            <article className="payment-option payment-redirect"><span className="payment-step">01 / CHECKOUT PRO</span><h2>Continuar en Mercado Pago</h2><p>Se abre el entorno seguro de Mercado Pago para elegir cómo pagar.</p><button className="primary-button" onClick={() => window.location.assign(payment.initPoint)}>Ir a Mercado Pago <span>↗</span></button></article>
+            <article className="payment-option payment-qr"><span className="payment-step">02 / PAGO CON QR</span><h2>Escaneá para continuar</h2><p>Escaneá este código con la cámara del teléfono y abrí el enlace de pago.</p><div className="payment-qr-box"><QRCodeSVG value={payment.initPoint} size={192} bgColor="#ffffff" fgColor="#161719" level="H" includeMargin /></div><small>Preferencia {payment.preferenceId}</small></article>
+          </div>
+          <p className="payment-footnote">El QR abre el mismo Checkout Pro de Mercado Pago. La confirmación del pago ocurre en Mercado Pago.</p>
+        </section>
+        <footer className="footer"><span>QRMarket · Selección sneaker</span><span>Modelos icónicos, todos los días.</span></footer>
+      </main>
+    );
+  }
+
+  if (selectedProduct && view === 'product') {
     return (
       <main className="page-shell">
         <header className="topbar">
@@ -120,7 +244,7 @@ function App() {
             <span className="brand-mark">q</span><span>qrmarket<span className="brand-dot">.</span></span>
           </button>
           <span className="top-note">SNEAKERS AUTÉNTICAS · ENVÍOS A TODO EL PAÍS</span>
-          <button className="text-button" onClick={goToCatalog}>← Catálogo</button>
+          <div className="detail-header-actions"><button className="cart-button" onClick={openCart}>Carrito <span className="cart-count">{cartCount}</span></button><button className="text-button" onClick={goToCatalog}>← Catálogo</button></div>
         </header>
         <section className="detail-layout">
           <div className="detail-photo-wrap">
@@ -161,7 +285,7 @@ function App() {
       <header className="topbar">
         <a className="brand" href="#inicio"><span className="brand-mark">q</span><span>qrmarket<span className="brand-dot">.</span></span></a>
         <span className="top-note">SNEAKERS AUTÉNTICAS · ENVÍOS A TODO EL PAÍS</span>
-        <button className="cart-button" onClick={() => setNotice('El carrito se incorpora en el siguiente módulo.')}>Carrito <span className="cart-count">0</span></button>
+        <button className="cart-button" onClick={openCart}>Carrito <span className="cart-count">{cartCount}</span></button>
       </header>
       <section className="hero" id="inicio">
         <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" /> QRMARKET PRESENTA · DROP 001</p>
