@@ -2,6 +2,9 @@
   "name": "qrmarket-mp",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=22.13"
+  },
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"node server/index.js\" \"vite\"",

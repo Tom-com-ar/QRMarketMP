@@ -154,3 +154,15 @@
 .seller-empty{padding:28px 14px;border:1px dashed var(--line);color:var(--muted);font-size:12px;text-align:center}
 .seller-demo-note{margin-top:32px;color:var(--muted);font:9px 'DM Mono',monospace}
 @media(max-width:600px){.catalog-header-actions{gap:8px}.seller-entry{font-size:9px}.seller-page{padding-top:38px}.seller-heading{align-items:flex-start;flex-direction:column}.seller-metrics{grid-template-columns:1fr;gap:9px;margin:24px 0 32px}.seller-metrics article{padding:15px}.seller-metrics article strong{margin-top:8px;font-size:21px}.seller-section-heading h2{font-size:18px}}
+.seller-login-page{display:grid;place-items:center;min-height:68vh;padding:40px 0 60px}
+.seller-login-card{display:flex;flex-direction:column;width:min(100%,420px);padding:32px;border:1px solid var(--line);background:#eeefec}
+.seller-login-card>.eyebrow{margin-bottom:12px}
+.seller-login-card h1{margin:0;font-size:42px;letter-spacing:-.07em}
+.seller-login-card h1 span{color:#d64127}
+.seller-login-copy{margin:10px 0 25px;color:var(--muted);font-size:12px;line-height:1.6}
+.seller-login-card label{margin:13px 0 7px;font-size:11px;font-weight:600}
+.seller-login-card input{width:100%;border:1px solid var(--line);background:#fff;padding:12px;font:12px 'DM Sans',sans-serif;color:var(--ink)}
+.seller-login-card .primary-button{height:46px;margin-top:20px}
+.seller-login-card>small{margin-top:13px;color:var(--muted);font-size:9px;line-height:1.5}
+.seller-login-error{padding:10px;background:#f3e7e5;color:#a04434;font-size:11px}
+@media(max-width:600px){.seller-login-card{padding:25px 20px}.seller-login-card h1{font-size:36px}}

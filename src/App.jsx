@@ -101,6 +101,10 @@ function App() {
   const [sellerLoading, setSellerLoading] = useState(false);
   const [sellerError, setSellerError] = useState('');
   const [sellerRefresh, setSellerRefresh] = useState(0);
+  const [sellerUsernameInput, setSellerUsernameInput] = useState('');
+  const [sellerPasswordInput, setSellerPasswordInput] = useState('');
+  const [sellerLoginError, setSellerLoginError] = useState('');
+  const [sellerLoggingIn, setSellerLoggingIn] = useState(false);
   const [cart, setCart] = useState(() => {
     try { return JSON.parse(localStorage.getItem('qrmarket-cart') || '[]'); }
     catch { return []; }
@@ -168,6 +172,12 @@ function App() {
     setSellerError('');
     fetch('/api/seller/dashboard')
       .then(async (response) => {
+        if (response.status === 401) {
+          setSellerPasswordInput('');
+          setView('login');
+          window.history.replaceState({}, '', `${window.location.pathname}?vista=login`);
+          return;
+        }
         const contentType = response.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
           throw new Error('Reiniciá npm run dev para cargar la versión nueva del panel.');
@@ -223,9 +233,49 @@ function App() {
 
   function openSellerDashboard() {
     setSelectedId(null);
-    setView('vendedor');
+    setView('login');
     setNotice('');
-    window.history.pushState({}, '', `${window.location.pathname}?vista=vendedor`);
+    setSellerLoginError('');
+    window.history.pushState({}, '', `${window.location.pathname}?vista=login`);
+  }
+
+  async function loginSeller(event) {
+    event.preventDefault();
+    setSellerLoggingIn(true);
+    setSellerLoginError('');
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: sellerUsernameInput, password: sellerPasswordInput }),
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('Reiniciá npm run dev para cargar la versión nueva del servidor.');
+      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No se pudo iniciar sesión.');
+      setSellerPasswordInput('');
+      setView('vendedor');
+      window.history.pushState({}, '', `${window.location.pathname}?vista=vendedor`);
+    } catch (error) {
+      setSellerLoginError(error.message);
+    } finally {
+      setSellerLoggingIn(false);
+    }
+  }
+
+  async function logoutSeller() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Clear the local view even if the server is temporarily unavailable.
+    } finally {
+      setView('catalog');
+      setSellerUsernameInput('');
+      setSellerPasswordInput('');
+      window.history.pushState({}, '', window.location.pathname);
+    }
   }
 
   function applyCoupon(event) {
@@ -300,6 +350,33 @@ function App() {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
+  if (view === 'login') {
+    return (
+      <main className="page-shell">
+        <header className="topbar">
+          <button className="brand" onClick={goToCatalog}><span className="brand-mark">q</span><span>qrmarket<span className="brand-dot">.</span></span></button>
+          <span className="top-note">ACCESO PARA VENDEDORES</span>
+          <button className="text-button" onClick={goToCatalog}>← Volver a la tienda</button>
+        </header>
+        <section className="seller-login-page">
+          <form className="seller-login-card" onSubmit={loginSeller}>
+            <p className="eyebrow">QRMARKET · PANEL PRIVADO</p>
+            <h1>Hola de nuevo<span>.</span></h1>
+            <p className="seller-login-copy">Iniciá sesión para consultar tus productos y órdenes.</p>
+            <label htmlFor="seller-username">Usuario</label>
+            <input id="seller-username" autoComplete="username" value={sellerUsernameInput} onChange={(event) => setSellerUsernameInput(event.target.value)} required />
+            <label htmlFor="seller-password">Contraseña</label>
+            <input id="seller-password" type="password" autoComplete="current-password" value={sellerPasswordInput} onChange={(event) => setSellerPasswordInput(event.target.value)} required />
+            {sellerLoginError && <p className="seller-login-error" role="alert">{sellerLoginError}</p>}
+            <button className="primary-button" type="submit" disabled={sellerLoggingIn}>{sellerLoggingIn ? 'Ingresando…' : 'Iniciar sesión'} <span>↗</span></button>
+            <small>La sesión se mantiene abierta durante 8 horas en este navegador.</small>
+          </form>
+        </section>
+        <footer className="footer"><span>QRMarket · Selección sneaker</span><span>Acceso de vendedor</span></footer>
+      </main>
+    );
+  }
+
   if (view === 'vendedor') {
     const approvedOrders = sellerDashboard.orders.filter((order) => order.status === 'approved');
     const approvedSales = approvedOrders.reduce((sum, order) => sum + order.total, 0);
@@ -308,7 +385,7 @@ function App() {
         <header className="topbar">
           <button className="brand" onClick={goToCatalog}><span className="brand-mark">q</span><span>qrmarket<span className="brand-dot">.</span></span></button>
           <span className="top-note">PANEL DEL VENDEDOR · DEMO</span>
-          <button className="text-button" onClick={goToCatalog}>← Volver a la tienda</button>
+          <button className="text-button" onClick={logoutSeller}>Cerrar sesión</button>
         </header>
         <section className="seller-page">
           <p className="eyebrow">QRMARKET · ADMINISTRACIÓN</p>
@@ -325,7 +402,7 @@ function App() {
           <section className="seller-section"><div className="seller-section-heading"><div><p className="eyebrow">ACTIVIDAD</p><h2>Órdenes y ventas</h2></div><span>{sellerLoading ? 'Actualizando…' : `${sellerDashboard.orders.length} órdenes`}</span></div>
             {sellerDashboard.orders.length === 0 ? <div className="seller-empty">{sellerLoading ? 'Cargando órdenes…' : 'Todavía no hay órdenes. Cuando se genere una compra, aparecerá acá.'}</div> : <div className="seller-table-wrap"><table className="seller-table seller-orders-table"><thead><tr><th>Orden</th><th>Fecha</th><th>Productos</th><th>Total</th><th>Estado</th></tr></thead><tbody>{sellerDashboard.orders.map((order) => <tr key={order.id}><td className="seller-order-id">{order.id}</td><td>{order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-AR') : '—'}</td><td>{order.items.map((item) => `${item.title} ×${item.quantity}`).join(', ')}</td><td>{money(order.total)}</td><td><span className={`seller-order-status status-${order.status}`}>{orderStatusLabels[order.status] || order.status}</span></td></tr>)}</tbody></table></div>}
           </section>
-          <p className="seller-demo-note">Panel de demostración abierto por enlace, sin inicio de sesión todavía.</p>
+          <p className="seller-demo-note">Acceso protegido por sesión de vendedor.</p>
         </section>
         <footer className="footer"><span>QRMarket · Selección sneaker</span><span>Panel de vendedor</span></footer>
       </main>

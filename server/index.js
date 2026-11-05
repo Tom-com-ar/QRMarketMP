@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { MercadoPagoConfig, Payment, Preference } from 'mercadopago';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getOrder, listOrders, saveOrder, updateOrder } from './orderStore.js';
@@ -28,12 +28,75 @@ const coupons = {
   CUPON: { percentage: 50 },
 };
 
+const isProduction = process.env.NODE_ENV === 'production';
+const sellerUsername = process.env.SELLER_USERNAME || (isProduction ? '' : 'vendedor');
+const sellerPassword = process.env.SELLER_PASSWORD || (isProduction ? '' : 'qrmarket-demo-2026');
+const sellerSessions = new Map();
+const sellerSessionCookie = 'qrm_seller_session';
+const sellerSessionDuration = 8 * 60 * 60 * 1000;
+
+function secretsMatch(provided, expected) {
+  if (typeof provided !== 'string' || !expected) return false;
+  const providedBuffer = Buffer.from(provided);
+  const expectedBuffer = Buffer.from(expected);
+  return providedBuffer.length === expectedBuffer.length && timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
+function getSellerSession(req) {
+  const cookie = (req.headers.cookie || '').split(';').map((part) => part.trim())
+    .find((part) => part.startsWith(`${sellerSessionCookie}=`));
+  if (!cookie) return null;
+  const sessionId = cookie.slice(sellerSessionCookie.length + 1);
+  const session = sellerSessions.get(sessionId);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    sellerSessions.delete(sessionId);
+    return null;
+  }
+  return { id: sessionId, ...session };
+}
+
+function requireSeller(req, res, next) {
+  const session = getSellerSession(req);
+  if (!session) return res.status(401).json({ error: 'Iniciá sesión para entrar al panel del vendedor.' });
+  req.sellerSession = session;
+  return next();
+}
+
 app.use(express.json({ limit: '20kb' }));
-app.use(cors({ origin: frontendUrl || 'http://localhost:5173' }));
+app.use(cors({ origin: frontendUrl || 'http://localhost:5173', credentials: true }));
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
-app.get('/api/seller/dashboard', (_req, res) => {
+app.post('/api/auth/login', (req, res) => {
+  if (!sellerUsername || !sellerPassword) {
+    return res.status(503).json({ error: 'Configurá SELLER_USERNAME y SELLER_PASSWORD en el entorno del servidor.' });
+  }
+  const { username, password } = req.body || {};
+  if (!secretsMatch(username, sellerUsername) || !secretsMatch(password, sellerPassword)) {
+    return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
+  }
+
+  const sessionId = randomBytes(32).toString('hex');
+  sellerSessions.set(sessionId, { username: sellerUsername, expiresAt: Date.now() + sellerSessionDuration });
+  const forwardedProtocol = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const secureCookie = req.secure || forwardedProtocol === 'https' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${sellerSessionCookie}=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sellerSessionDuration / 1000}${secureCookie}`);
+  return res.json({ authenticated: true, username: sellerUsername });
+});
+
+app.get('/api/auth/session', requireSeller, (req, res) => {
+  return res.json({ authenticated: true, username: req.sellerSession.username });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const session = getSellerSession(req);
+  if (session) sellerSessions.delete(session.id);
+  res.setHeader('Set-Cookie', `${sellerSessionCookie}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
+  return res.json({ authenticated: false });
+});
+
+app.get('/api/seller/dashboard', requireSeller, (_req, res) => {
   const dashboardProducts = Object.entries(products).map(([id, product]) => ({
     id,
     title: product.title,
