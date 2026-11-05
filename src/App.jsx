@@ -68,6 +68,15 @@ const products = [
 const money = (amount) => new Intl.NumberFormat('es-AR', {
   style: 'currency', currency: 'ARS', maximumFractionDigits: 0,
 }).format(amount);
+const orderStatusLabels = {
+  approved: 'Aprobada',
+  pending: 'Pendiente',
+  rejected: 'Rechazada',
+  cancelled: 'Cancelada',
+  refunded: 'Reembolsada',
+  in_process: 'En proceso',
+  authorized: 'Autorizada',
+};
 
 function App() {
   const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get('producto'));
@@ -88,6 +97,10 @@ function App() {
   const [payment, setPayment] = useState(null);
   const [creatingPayment, setCreatingPayment] = useState(false);
   const [returnedOrder, setReturnedOrder] = useState(null);
+  const [sellerDashboard, setSellerDashboard] = useState({ products: [], orders: [] });
+  const [sellerLoading, setSellerLoading] = useState(false);
+  const [sellerError, setSellerError] = useState('');
+  const [sellerRefresh, setSellerRefresh] = useState(0);
   const [cart, setCart] = useState(() => {
     try { return JSON.parse(localStorage.getItem('qrmarket-cart') || '[]'); }
     catch { return []; }
@@ -148,6 +161,26 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (view !== 'vendedor') return undefined;
+    let active = true;
+    setSellerLoading(true);
+    setSellerError('');
+    fetch('/api/seller/dashboard')
+      .then(async (response) => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error('Reiniciá npm run dev para cargar la versión nueva del panel.');
+        }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'No se pudo cargar el panel.');
+        if (active) setSellerDashboard(data);
+      })
+      .catch((error) => { if (active) setSellerError(error.message); })
+      .finally(() => { if (active) setSellerLoading(false); });
+    return () => { active = false; };
+  }, [view, sellerRefresh]);
+
   function openProduct(product) {
     setSelectedId(product.id);
     setView('product');
@@ -186,6 +219,13 @@ function App() {
     setView('cart');
     setNotice('');
     window.history.pushState({}, '', `${window.location.pathname}?vista=carrito`);
+  }
+
+  function openSellerDashboard() {
+    setSelectedId(null);
+    setView('vendedor');
+    setNotice('');
+    window.history.pushState({}, '', `${window.location.pathname}?vista=vendedor`);
   }
 
   function applyCoupon(event) {
@@ -258,6 +298,38 @@ function App() {
     await navigator.clipboard.writeText(productUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  if (view === 'vendedor') {
+    const approvedOrders = sellerDashboard.orders.filter((order) => order.status === 'approved');
+    const approvedSales = approvedOrders.reduce((sum, order) => sum + order.total, 0);
+    return (
+      <main className="page-shell">
+        <header className="topbar">
+          <button className="brand" onClick={goToCatalog}><span className="brand-mark">q</span><span>qrmarket<span className="brand-dot">.</span></span></button>
+          <span className="top-note">PANEL DEL VENDEDOR · DEMO</span>
+          <button className="text-button" onClick={goToCatalog}>← Volver a la tienda</button>
+        </header>
+        <section className="seller-page">
+          <p className="eyebrow">QRMARKET · ADMINISTRACIÓN</p>
+          <div className="seller-heading"><div><h1>Resumen de ventas<span>.</span></h1><p>Productos, pagos y estado de tus órdenes.</p></div><button className="seller-refresh" onClick={() => setSellerRefresh((value) => value + 1)}>Actualizar datos ↻</button></div>
+          {sellerError && <p className="notice" role="alert">{sellerError}</p>}
+          <div className="seller-metrics">
+            <article><span>VENTAS APROBADAS</span><strong>{money(approvedSales)}</strong></article>
+            <article><span>ÓRDENES APROBADAS</span><strong>{approvedOrders.length}</strong></article>
+            <article><span>ÓRDENES TOTALES</span><strong>{sellerDashboard.orders.length}</strong></article>
+          </div>
+          <section className="seller-section"><div className="seller-section-heading"><div><p className="eyebrow">INVENTARIO</p><h2>Productos publicados</h2></div><span>{sellerDashboard.products.length} modelos</span></div>
+            <div className="seller-table-wrap"><table className="seller-table"><thead><tr><th>Producto</th><th>Precio</th><th>Stock</th></tr></thead><tbody>{sellerDashboard.products.map((product) => <tr key={product.id}><td>{product.title}</td><td>{money(product.price)}</td><td>{product.stock} pares</td></tr>)}</tbody></table></div>
+          </section>
+          <section className="seller-section"><div className="seller-section-heading"><div><p className="eyebrow">ACTIVIDAD</p><h2>Órdenes y ventas</h2></div><span>{sellerLoading ? 'Actualizando…' : `${sellerDashboard.orders.length} órdenes`}</span></div>
+            {sellerDashboard.orders.length === 0 ? <div className="seller-empty">{sellerLoading ? 'Cargando órdenes…' : 'Todavía no hay órdenes. Cuando se genere una compra, aparecerá acá.'}</div> : <div className="seller-table-wrap"><table className="seller-table seller-orders-table"><thead><tr><th>Orden</th><th>Fecha</th><th>Productos</th><th>Total</th><th>Estado</th></tr></thead><tbody>{sellerDashboard.orders.map((order) => <tr key={order.id}><td className="seller-order-id">{order.id}</td><td>{order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-AR') : '—'}</td><td>{order.items.map((item) => `${item.title} ×${item.quantity}`).join(', ')}</td><td>{money(order.total)}</td><td><span className={`seller-order-status status-${order.status}`}>{orderStatusLabels[order.status] || order.status}</span></td></tr>)}</tbody></table></div>}
+          </section>
+          <p className="seller-demo-note">Panel de demostración abierto por enlace, sin inicio de sesión todavía.</p>
+        </section>
+        <footer className="footer"><span>QRMarket · Selección sneaker</span><span>Panel de vendedor</span></footer>
+      </main>
+    );
   }
 
   if (view === 'cart') {
@@ -376,7 +448,7 @@ function App() {
       <header className="topbar">
         <a className="brand" href="#inicio"><span className="brand-mark">q</span><span>qrmarket<span className="brand-dot">.</span></span></a>
         <span className="top-note">SNEAKERS AUTÉNTICAS · ENVÍOS A TODO EL PAÍS</span>
-        <button className="cart-button" onClick={openCart}>Carrito <span className="cart-count">{cartCount}</span></button>
+        <div className="catalog-header-actions"><button className="seller-entry" onClick={openSellerDashboard}>Panel vendedor ↗</button><button className="cart-button" onClick={openCart}>Carrito <span className="cart-count">{cartCount}</span></button></div>
       </header>
       <section className="hero" id="inicio">
         <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" /> QRMARKET PRESENTA · DROP 001</p>

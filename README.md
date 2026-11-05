@@ -1,4 +1,4 @@
-# QRMarket MP — avance QM1 a QM9
+# QRMarket MP — avance QM1 a QM10
 
 Tienda de zapatillas de muestra, construida con React, Vite y Express.
 
@@ -13,6 +13,7 @@ Tienda de zapatillas de muestra, construida con React, Vite y Express.
 - **QM7:** el backend valida la firma del webhook, consulta el pago directamente en Mercado Pago y actualiza la orden guardada en `server/data/orders.json`.
 - **QM8:** el carrito acepta el cupón `CUPON` (50% de descuento); el servidor lo valida y calcula el total antes de crear el pago.
 - **QM9:** el carrito calcula el envío por código postal: CABA (1000–1499), $5.000; Gran Buenos Aires (1500–1999), $8.000; interior (2000–9999), $12.000. Desde $250.000 después del cupón, el envío es gratis. El servidor vuelve a calcularlo e incluye su costo en el pago. Son tarifas de demostración, no una cotización de un correo.
+- **QM10:** el panel del vendedor lista productos, ventas aprobadas y estados de las órdenes. Se abre desde **Panel vendedor** o con `?vista=vendedor`; por ahora está abierto, sin login.
 
 ## Preparar credenciales de prueba
 

@@ -30,6 +30,10 @@ export function getOrder(orderId) {
   return readOrders()[orderId] || null;
 }
 
+export function listOrders() {
+  return Object.values(readOrders());
+}
+
 export function updateOrder(orderId, updates) {
   const orders = readOrders();
   if (!orders[orderId]) return null;

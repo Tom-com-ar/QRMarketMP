@@ -5,7 +5,7 @@ import { MercadoPagoConfig, Payment, Preference } from 'mercadopago';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getOrder, saveOrder, updateOrder } from './orderStore.js';
+import { getOrder, listOrders, saveOrder, updateOrder } from './orderStore.js';
 import { getShippingQuote } from '../src/shipping.js';
 
 const app = express();
@@ -32,6 +32,26 @@ app.use(express.json({ limit: '20kb' }));
 app.use(cors({ origin: frontendUrl || 'http://localhost:5173' }));
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+
+app.get('/api/seller/dashboard', (_req, res) => {
+  const dashboardProducts = Object.entries(products).map(([id, product]) => ({
+    id,
+    title: product.title,
+    price: product.unit_price,
+    stock: product.stock,
+  }));
+  const orders = listOrders()
+    .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt))
+    .map(({ id, items, total, status, createdAt, shipping }) => ({
+      id,
+      items,
+      total,
+      status,
+      createdAt,
+      shipping: shipping || null,
+    }));
+  return res.json({ products: dashboardProducts, orders });
+});
 
 app.get('/api/orders/:orderId', (req, res) => {
   const order = getOrder(req.params.orderId);
