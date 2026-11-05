@@ -1,4 +1,4 @@
-# QRMarket MP — avance QM1 a QM6
+# QRMarket MP — avance QM1 a QM7
 
 Tienda de zapatillas de muestra, construida con React, Vite y Express.
 
@@ -10,6 +10,7 @@ Tienda de zapatillas de muestra, construida con React, Vite y Express.
 - **QM4:** carrito con cantidades, eliminación, subtotal y persistencia en `localStorage`.
 - **QM5:** el backend valida el carrito y crea una preferencia de Checkout Pro; el botón abre el enlace de pago de Mercado Pago.
 - **QM6:** se puede mostrar un QR que codifica el mismo enlace Checkout Pro para abrirlo desde otro teléfono.
+- **QM7:** el backend valida la firma del webhook, consulta el pago directamente en Mercado Pago y actualiza la orden guardada en `server/data/orders.json`.
 
 ## Preparar credenciales de prueba
 
@@ -24,3 +25,14 @@ Tienda de zapatillas de muestra, construida con React, Vite y Express.
 3. Abrir la dirección local que muestra Vite, normalmente `http://localhost:5173`.
 
 El comando de desarrollo levanta el servidor Express en el puerto 3001 y Vite en el 5173; Vite reenvía `/api` al backend.
+
+## Preparar y probar QM7 en desarrollo
+
+1. Ejecutar `npm run build` para que Express pueda servir la tienda al volver desde Mercado Pago.
+2. En una segunda terminal, exponer el puerto del backend con `ngrok http 3001` y copiar su dirección pública HTTPS.
+3. Pegar esa dirección sin `/` final en `PUBLIC_BASE_URL` y `FRONTEND_URL` dentro de `.env`.
+4. En Mercado Pago Developers, abrir la aplicación y configurar Webhooks para el entorno de prueba. Elegir el evento **Pagos** y usar `https://TU-DIRECCION/api/webhooks/mercadopago`. Copiar la clave secreta generada a `MP_WEBHOOK_SECRET`.
+5. Reiniciar `npm run dev`, crear una compra sandbox y usar el panel de Webhooks para simular una notificación de pago con el ID de pago de prueba.
+6. Al volver a la tienda, la orden consulta el estado guardado y lo muestra. También se puede consultar `http://localhost:3001/api/orders/ID-DE-ORDEN`.
+
+Importante: Mercado Pago indica que los pagos hechos con credenciales de prueba no envían webhooks automáticamente. Para probar la recepción, hay que usar el simulador de Webhooks en Tus integraciones. Las notificaciones se firman con `x-signature` y se validan con `MP_WEBHOOK_SECRET`.

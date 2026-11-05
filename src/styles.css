@@ -93,3 +93,12 @@
 .payment-footnote{font-size:10px;color:var(--muted);margin-top:18px}
 .primary-button:disabled{opacity:.6;cursor:wait}
 @media(max-width:700px){.payment-options{grid-template-columns:1fr}.payment-option{min-height:unset;padding:22px}.payment-redirect .primary-button{width:100%}.payment-page{padding-top:38px}}
+.order-status{display:flex;align-items:center;gap:14px;padding:16px 18px;margin:25px 0 0;background:#e9eee7;border-left:3px solid #58834f;color:#26362a}
+.order-status-mark{display:grid;place-items:center;width:32px;height:32px;border:1px solid #7a9c73;border-radius:50%;font-size:18px;flex:none}
+.order-status strong,.order-status small{display:block}
+.order-status strong{font-size:13px}
+.order-status small{margin-top:4px;font:9px 'DM Mono',monospace;color:#6e786d}
+.order-pending{background:#f3efe2;border-color:#bd9650;color:#4e432b}
+.order-pending .order-status-mark{border-color:#bd9650}
+.order-rejected,.order-cancelled{background:#f3e7e5;border-color:#b6584b;color:#57312d}
+.order-rejected .order-status-mark,.order-cancelled .order-status-mark{border-color:#b6584b}

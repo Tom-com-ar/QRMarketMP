@@ -80,6 +80,7 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [payment, setPayment] = useState(null);
   const [creatingPayment, setCreatingPayment] = useState(false);
+  const [returnedOrder, setReturnedOrder] = useState(null);
   const [cart, setCart] = useState(() => {
     try { return JSON.parse(localStorage.getItem('qrmarket-cart') || '[]'); }
     catch { return []; }
@@ -105,6 +106,34 @@ function App() {
   useEffect(() => {
     localStorage.setItem('qrmarket-cart', JSON.stringify(cart));
   }, [cart]);
+
+  useEffect(() => {
+    const orderId = new URLSearchParams(window.location.search).get('orden');
+    if (!orderId) return undefined;
+    let active = true;
+    let attempts = 0;
+    let timer;
+    const refreshOrder = async () => {
+      try {
+        const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+        if (response.ok) {
+          const order = await response.json();
+          if (!active) return;
+          setReturnedOrder(order);
+          if (order.status !== 'pending' || attempts >= 7) return;
+        }
+      } catch {
+        if (!active) return;
+      }
+      attempts += 1;
+      timer = window.setTimeout(refreshOrder, 2500);
+    };
+    refreshOrder();
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   function openProduct(product) {
     setSelectedId(product.id);
@@ -296,6 +325,7 @@ function App() {
         <div className="hero-art"><img src={products[0].image} alt="Nike Air Force 1 '07 blanca" /><span className="hero-note">STEP INTO<br />YOUR NEXT</span><span className="hero-index">DROP 001 — 2026</span></div>
         <span className="hero-scribble" aria-hidden="true">✳</span>
       </section>
+      {returnedOrder && <section className={`order-status order-${returnedOrder.status}`} role="status"><span className="order-status-mark">{returnedOrder.status === 'approved' ? '✓' : '↻'}</span><div><strong>{returnedOrder.status === 'approved' ? 'Pago confirmado' : returnedOrder.status === 'pending' ? 'Esperando confirmación del pago' : `Estado del pago: ${returnedOrder.status}`}</strong><small>Orden {returnedOrder.id} · Total {money(returnedOrder.total)}</small></div></section>}
       <section className="catalog" id="productos">
         <div className="section-heading"><div><p className="eyebrow">SELECCIÓN QRMARKET · BUENOS AIRES</p><h2>Modelos que pisan fuerte<span>.</span></h2></div><span className="product-count">{visibleProducts.length} modelos</span></div>
         <nav className="catalog-filters" aria-label="Filtrar zapatillas por marca">
